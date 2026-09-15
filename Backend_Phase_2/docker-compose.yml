@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://hubflow_user:hubflow_pass@db:3306/hubflow_db
+      - JWT_SECRET=hubflow_prod_secret_jwt_key_2026
+      - JWT_EXPIRES_IN=1d
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    image: mysql:8.0
+    container_name: hubflow_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: hubflow_db
+      MYSQL_USER: hubflow_user
+      MYSQL_PASSWORD: hubflow_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: always
+
+volumes:
+  mysql_data:
