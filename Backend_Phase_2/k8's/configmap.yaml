@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hubflow-config
+  namespace: hubflow
+
+data:
+  NODE_ENV: production
+  PORT: "3000"
+  JWT_EXPIRES_IN: "1d"
+
+  MYSQL_DATABASE: hubflow_db
+  MYSQL_USER: hubflow_user
