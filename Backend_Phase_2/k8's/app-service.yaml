@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hubflow-app
+  namespace: hubflow
+
+spec:
+  type: LoadBalancer
+
+  selector:
+    app: hubflow-app
+
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
