@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Brand design tokens — warm paper + deep forest + chartreuse accent. */
+@theme {
+  --color-cream: #faf7f0;
+  --color-sand: #efe9dc;
+  --color-sand-2: #e2d9c6;
+  --color-ink: #17150e;
+  --color-body: #3c382c;
+  --color-mute: #6b6656;
+  --color-forest: #1e3a2b;
+  --color-forest-dark: #142a1e;
+  --color-lime: #cdeb4b;
+  --color-lime-dark: #b3d836;
+  --color-sale: #b23a48;
+
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* Offset anchor jumps for the sticky header. */
+    scroll-padding-top: 6rem;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-cream font-sans text-body antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display font-normal;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-forest);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background: var(--color-lime);
+    color: var(--color-ink);
+  }
+
+  /* Refined scrollbar */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-cream);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-sand-2);
+    border: 3px solid var(--color-cream);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-mute);
+  }
+}
