@@ -1,0 +1,595 @@
+pipeline {
+    agent any
+
+    tools {
+        nodejs 'NodeJS-22'
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        BACKEND_DIR = '3d-menu-backend'
+        SONAR_HOST_URL = 'https://sonarcloud.io'
+        REPORTS_DIR = '3d-menu-backend/reports'
+        DOCKER_IMAGE = 'ghcr.io/airdive-digital/3d-ar-menu/backend'
+    }
+
+    stages {
+
+        /*
+         |--------------------------------------------------------------------------
+         | CHECKOUT
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | SETUP NODE
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Setup Node') {
+            steps {
+                sh '''
+                    node --version
+                    npm --version
+                '''
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | INSTALL BACKEND DEPENDENCIES
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Install Dependencies') {
+            steps {
+                dir("${BACKEND_DIR}") {
+                    sh '''
+                        npm ci --ignore-scripts
+                    '''
+                }
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | GENERATE PRISMA CLIENT
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Generate Prisma Client') {
+            steps {
+                dir("${BACKEND_DIR}") {
+                    sh '''
+                        npx prisma generate
+                    '''
+                }
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | ESLINT
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Run ESLint') {
+            steps {
+                script {
+
+                    dir("${BACKEND_DIR}") {
+
+                        sh '''
+                            mkdir -p reports
+                        '''
+
+                        def lintStatus = sh(
+                            script: '''
+                                npm run lint > reports/eslint-report.txt 2>&1
+                            ''',
+                            returnStatus: true
+                        )
+
+                        if (lintStatus != 0) {
+
+                            env.LINT_FAILED = 'true'
+
+                            echo 'ESLint failed.'
+
+                        } else {
+
+                            env.LINT_FAILED = 'false'
+
+                            echo 'ESLint passed.'
+                        }
+                    }
+                }
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | SHOW ESLINT REPORT
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Show ESLint Report') {
+            steps {
+
+                sh '''
+                    if [ -f "$REPORTS_DIR/eslint-report.txt" ]; then
+                        echo "ESLint Report:"
+                        cat "$REPORTS_DIR/eslint-report.txt"
+                    else
+                        echo "No ESLint report found."
+                    fi
+                '''
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | ARCHIVE ESLINT REPORT
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Archive ESLint Report') {
+            steps {
+
+                archiveArtifacts(
+                    artifacts: "${REPORTS_DIR}/eslint-report.txt",
+                    allowEmptyArchive: true
+                )
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | EMAIL IF ESLINT FAILS
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Email ESLint Failure') {
+
+            when {
+                expression {
+                    return env.LINT_FAILED == 'true'
+                }
+            }
+
+            steps {
+
+                withCredentials([
+                    string(
+                        credentialsId: 'EMAIL_USERNAME',
+                        variable: 'EMAIL_USERNAME'
+                    ),
+                    string(
+                        credentialsId: 'EMAIL_PASSWORD',
+                        variable: 'EMAIL_PASSWORD'
+                    )
+                ]) {
+
+                    script {
+
+                        emailext(
+                            subject: "❌ ESLint Failed - Backend Build #${BUILD_NUMBER}",
+
+                            to: 'ceo@airdive.co.in',
+
+                            body: """
+ESLint found issues in the latest Jenkins backend build.
+
+Job:
+${JOB_NAME}
+
+Build:
+${BUILD_NUMBER}
+
+Branch:
+${BRANCH_NAME}
+
+Build URL:
+${BUILD_URL}
+
+Please check the archived ESLint report.
+                            """
+                        )
+                    }
+                }
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | RUN TESTS
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Run Tests') {
+
+            steps {
+
+                script {
+
+                    dir("${BACKEND_DIR}") {
+
+                        sh '''
+                            mkdir -p reports
+                        '''
+
+                        def testStatus = sh(
+                            script: '''
+                                npm test > reports/test-report.txt 2>&1
+                            ''',
+                            returnStatus: true
+                        )
+
+                        if (testStatus != 0) {
+
+                            env.TESTS_FAILED = 'true'
+
+                            echo 'Tests failed.'
+
+                        } else {
+
+                            env.TESTS_FAILED = 'false'
+
+                            echo 'Tests passed.'
+                        }
+                    }
+                }
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | SHOW TEST REPORT
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Show Test Report') {
+
+            steps {
+
+                sh '''
+                    if [ -f "$REPORTS_DIR/test-report.txt" ]; then
+                        echo "Test Report:"
+                        cat "$REPORTS_DIR/test-report.txt"
+                    else
+                        echo "No test report found."
+                    fi
+                '''
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | ARCHIVE TEST REPORT
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Archive Test Report') {
+            steps {
+
+                archiveArtifacts(
+                    artifacts: "${REPORTS_DIR}/test-report.txt",
+                    allowEmptyArchive: true
+                )
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | CHECK LINT AND TESTS
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Check Quality') {
+
+            steps {
+
+                script {
+
+                    if (
+                        env.LINT_FAILED == 'true' ||
+                        env.TESTS_FAILED == 'true'
+                    ) {
+
+                        error(
+                            "Lint or test failures detected."
+                        )
+                    }
+
+                    echo 'All quality checks passed.'
+                }
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | SONARCLOUD SCAN
+         |--------------------------------------------------------------------------
+        */
+
+        stage('SonarCloud Scan') {
+
+            steps {
+
+                script {
+
+                    def scannerHome = tool 'SonarScanner'
+
+                    withCredentials([
+
+                        string(
+                            credentialsId: 'SONAR_TOKEN',
+                            variable: 'SONAR_TOKEN'
+                        ),
+
+                        string(
+                            credentialsId: 'SONAR_PROJECT_KEY',
+                            variable: 'SONAR_PROJECT_KEY'
+                        ),
+
+                        string(
+                            credentialsId: 'SONAR_ORG',
+                            variable: 'SONAR_ORG'
+                        )
+
+                    ]) {
+
+                        dir("${BACKEND_DIR}") {
+
+                            sh """
+                                ${scannerHome}/bin/sonar-scanner \
+                                -Dsonar.projectKey=\$SONAR_PROJECT_KEY \
+                                -Dsonar.organization=\$SONAR_ORG \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=https://sonarcloud.io \
+                                -Dsonar.token=\$SONAR_TOKEN
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | TRIVY FILESYSTEM SCAN
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Trivy Filesystem Scan') {
+
+            steps {
+
+                sh '''
+                    /usr/bin/trivy fs \
+                        --format table \
+                        --output trivy-report.txt \
+                        --skip-version-check \
+                        "$BACKEND_DIR"
+                '''
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | SHOW TRIVY FILESYSTEM REPORT
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Show Trivy Filesystem Report') {
+
+            steps {
+
+                sh '''
+                    if [ -f trivy-report.txt ]; then
+                        echo "Trivy Filesystem Scan Report:"
+                        cat trivy-report.txt
+                    else
+                        echo "No Trivy report found."
+                    fi
+                '''
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | SET UNIQUE IMAGE TAG
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Set Image Tag') {
+
+            steps {
+
+                script {
+
+                    def shortCommit = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    env.IMAGE_TAG =
+                        "${env.BUILD_NUMBER}-${shortCommit}"
+
+                    echo "Build Number: ${env.BUILD_NUMBER}"
+                    echo "Git Commit: ${shortCommit}"
+                    echo "Image Tag: ${env.IMAGE_TAG}"
+                }
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | BUILD DOCKER IMAGE
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Build Docker Image') {
+
+            steps {
+
+                sh '''
+                    docker build \
+                        -t "$DOCKER_IMAGE:$IMAGE_TAG" \
+                        -t "$DOCKER_IMAGE:latest" \
+                        "$BACKEND_DIR"
+                '''
+            }
+        }
+
+
+        /*
+         |--------------------------------------------------------------------------
+         | TRIVY IMAGE SCAN
+         |--------------------------------------------------------------------------
+        */
+
+        stage('Trivy Image Scan') {
+
+            steps {
+
+                sh '''
+                    /usr/bin/trivy image \
+                        --format table \
+                        --output trivy-image-report.txt \
+                        --severity CRITICAL,HIGH \
+                        --ignore-unfixed \
+                        --skip-version-check \
+                        "$DOCKER_IMAGE:$IMAGE_TAG"
+                '''
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PUSH DOCKER IMAGE (WITH AUTHENTICATION)
+        |--------------------------------------------------------------------------
+        */
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    try {
+                        withCredentials([
+                            usernamePassword(
+                                credentialsId: '3D-menu',
+                                usernameVariable: 'GITHUB_USERNAME',
+                                passwordVariable: 'GITHUB_TOKEN'
+                            )
+                        ]) {
+                            sh '''
+                                echo "$GITHUB_TOKEN" | docker login ghcr.io \
+                                    -u "$GITHUB_USERNAME" \
+                                    --password-stdin
+
+                                docker push "$DOCKER_IMAGE:$IMAGE_TAG"
+                                docker push "$DOCKER_IMAGE:latest"
+                            '''
+                        }
+                    } catch (Exception e) {
+                        echo "Primary credentials failed, trying GH_TOKEN credential fallback: ${e.message}"
+                        withCredentials([
+                            string(
+                                credentialsId: 'GH_TOKEN',
+                                variable: 'GH_TOKEN_FALLBACK'
+                            )
+                        ]) {
+                            sh '''
+                                echo "$GH_TOKEN_FALLBACK" | docker login ghcr.io \
+                                    -u "airdive-digital" \
+                                    --password-stdin
+
+                                docker push "$DOCKER_IMAGE:$IMAGE_TAG"
+                                docker push "$DOCKER_IMAGE:latest"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    post {
+
+        always {
+
+            archiveArtifacts artifacts: '''
+                3d-menu-backend/reports/eslint-report.txt,
+                3d-menu-backend/reports/test-report.txt,
+                trivy-report.txt,
+                trivy-image-report.txt
+            ''', allowEmptyArchive: true
+
+            sh '''
+                docker image prune -af || true
+                docker builder prune -af || true
+               '''
+
+            cleanWs(
+                deleteDirs: true,
+                notFailBuild: true
+        )
+        }
+
+        success {
+
+            echo """
+            ==============================================
+            BACKEND PIPELINE SUCCESSFUL
+            ==============================================
+
+            Docker Image:
+            ${DOCKER_IMAGE}:${IMAGE_TAG}
+
+            Latest Image:
+            ${DOCKER_IMAGE}:latest
+            """
+        }
+
+
+        failure {
+
+            echo """
+            ==============================================
+            BACKEND PIPELINE FAILED
+            ==============================================
+
+            Check Jenkins console output and archived reports.
+            """
+        }
+    }
+}
