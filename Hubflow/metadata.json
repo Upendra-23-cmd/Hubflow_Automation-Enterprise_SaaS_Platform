@@ -1,0 +1,6 @@
+{
+  "name": "Hubflow Automation",
+  "description": "Next-generation workflow automation platform connecting your tech stack with AI-powered triggers, visual logic, and zero-maintenance pipelines.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
